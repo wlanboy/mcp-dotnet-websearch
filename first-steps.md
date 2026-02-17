@@ -1,93 +1,107 @@
-# Remote MCP Server mit ASP.NET Core (HTTP) – Schritt für Schritt
+# MCP Server mit ASP.NET Core (HTTP) – Schritt fuer Schritt
+
+Diese Anleitung beschreibt, wie der `mcp-dotnet-server` erstellt wurde.
 
 ## 1. Projekt erstellen
 
 ```bash
-# Template installieren (falls noch nicht geschehen)
-dotnet new install Microsoft.McpServer.ProjectTemplates
-
-# HTTP-Variante erstellen
-dotnet new mcpserver -n MeinMcpServer --transport http
-```
-
-Alternativ manuell:
-
-```bash
-dotnet new web -n MeinMcpServer
-cd MeinMcpServer
+dotnet new web -n mcp-dotnet-server
+cd mcp-dotnet-server
 dotnet add package ModelContextProtocol.AspNetCore --prerelease
 ```
 
 ## 2. Program.cs einrichten
 
-```csharp
-using ModelContextProtocol.Server;
-using System.ComponentModel;
+Die Tool-Klassen werden explizit mit `.WithTools<T>()` registriert:
 
+```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddMcpServer()
+builder.Services
+    .AddMcpServer()
     .WithHttpTransport()
-    .WithToolsFromAssembly();  // findet alle Tools automatisch
+    .WithTools<RandomNumberTools>()
+    .WithTools<WebSearchTools>();
 
 var app = builder.Build();
-
-app.MapMcp();  // registriert die MCP HTTP-Endpunkte
+app.MapMcp();
 
 app.Run("http://localhost:3001");
 ```
 
-## 3. Tools definieren
+## 3. Einfaches Tool: Zufallszahlen
 
-Tools sind einfache statische Methoden mit Attributen:
+Ein einfaches Tool ohne externe Abhaengigkeiten (`Tools/RandomNumberTools.cs`):
 
 ```csharp
-[McpServerToolType]
-public static class MeineTools
+using System.ComponentModel;
+using ModelContextProtocol.Server;
+
+internal class RandomNumberTools
 {
-    [McpServerTool, Description("Berechnet die Summe zweier Zahlen.")]
-    public static int Addieren(
-        [Description("Erste Zahl")] int a,
-        [Description("Zweite Zahl")] int b) => a + b;
-
-    [McpServerTool, Description("Gibt das aktuelle Datum zurueck.")]
-    public static string HeutigesDatum() => DateTime.Now.ToString("dd.MM.yyyy");
-
-    [McpServerTool, Description("Beschreibt das Wetter in einer Stadt.")]
-    public static string GetCityWeather(
-        [Description("Name der Stadt")] string city)
+    [McpServerTool]
+    [Description("Erzeugt eine Zufallszahl zwischen dem angegebenen Minimum und Maximum.")]
+    public int GetRandomNumber(
+        [Description("Minimalwert (inklusive)")] int min = 0,
+        [Description("Maximalwert (exklusive)")] int max = 100)
     {
-        var optionen = new[] { "sonnig", "bewoelkt", "regnerisch", "stuermisch" };
-        var index = Random.Shared.Next(0, optionen.Length);
-        return $"Das Wetter in {city} ist {optionen[index]}.";
+        return Random.Shared.Next(min, max);
     }
 }
 ```
 
-Tools koennen auch Dependency Injection nutzen und muessen nicht statisch sein:
+## 4. Tool mit DI und Konfiguration: Websuche
+
+Ein komplexeres Tool mit Dependency Injection (`Tools/WebSearchTools.cs`). Die erlaubten Domains werden per `IConfiguration` aus `appsettings.json` geladen:
 
 ```csharp
-[McpServerToolType]
-public class DatenbankTools
+internal partial class WebSearchTools(IConfiguration configuration)
 {
-    [McpServerTool, Description("Sucht einen Kunden nach Name.")]
-    public async Task<string> KundeSuchen(
-        [Description("Kundenname")] string name,
-        MeinDbContext db)  // wird per DI injiziert
+    private readonly HashSet<string> _allowedDomains =
+        configuration.GetSection("WebSearch:AllowedDomains").Get<string[]>()?.ToHashSet()
+        ?? [];
+
+    [McpServerTool]
+    [Description("Fuehrt eine Websuche ueber DuckDuckGo durch...")]
+    public async Task<string> SearchWeb(
+        [Description("Der Suchbegriff")] string query,
+        [Description("Maximale Anzahl der zurueckgegebenen Ergebnisse")] int maxResults = 5)
     {
-        var kunde = await db.Kunden.FirstOrDefaultAsync(k => k.Name == name);
-        return kunde?.ToString() ?? "Nicht gefunden.";
+        // DuckDuckGo HTML-Version abfragen, Ergebnisse parsen und filtern
     }
 }
 ```
 
-## 4. Starten und Testen
+## 5. Konfiguration: appsettings.json
+
+Die Domain-Whitelist fuer die Websuche wird in `appsettings.json` gepflegt:
+
+```json
+{
+  "WebSearch": {
+    "AllowedDomains": [
+      "learn.microsoft.com",
+      "github.com",
+      "devblogs.microsoft.com",
+      "dotnetfoundation.org",
+      "nuget.org",
+      "andrewlock.net",
+      "code-maze.com",
+      "dotnetperls.com",
+      "c-sharpcorner.com",
+      "reddit.com"
+    ]
+  }
+}
+```
+
+## 6. Starten und Testen
 
 ```bash
 dotnet run
 ```
 
-Der Server laeuft auf `http://localhost:3001`. Teste mit der generierten `.http`-Datei oder manuell:
+Der Server laeuft auf `http://localhost:3001`. Teste manuell mit einem HTTP-Request:
 
 ```http
 POST http://localhost:3001/
@@ -105,14 +119,14 @@ Content-Type: application/json
 }
 ```
 
-## 5. Client-Konfiguration (mcp.json)
+## 7. Client-Konfiguration
 
-VS Code / GitHub Copilot:
+VS Code / GitHub Copilot (`mcp.json`):
 
 ```json
 {
   "servers": {
-    "MeinMcpServer": {
+    "mcp-dotnet-server": {
       "type": "http",
       "url": "http://localhost:3001"
     }
@@ -125,34 +139,33 @@ Claude Code (`~/.claude/settings.json`):
 ```json
 {
   "mcpServers": {
-    "MeinMcpServer": {
+    "mcp-dotnet-server": {
       "url": "http://localhost:3001"
     }
   }
 }
 ```
 
-## 6. Projektstruktur
+LM Studio (`~/.lmstudio/mcp.json`):
 
-```
-MeinMcpServer/
-├── Program.cs                 # Server-Setup + Endpunkte
-├── Tools/
-│   └── MeineTools.cs          # Tool-Definitionen
-├── MeinMcpServer.csproj       # Packages + Config
-├── MeinMcpServer.http         # Test-Requests (nur bei HTTP)
-└── .mcp/server.json           # NuGet-Metadaten (optional)
+```json
+{
+  "mcpServers": {
+    "mcp-dotnet-server": {
+      "url": "http://localhost:3001"
+    }
+  }
+}
 ```
 
-## 7. Wichtigste Bausteine
+## 8. Wichtigste Bausteine
 
 | Baustein | Beschreibung |
-|---|---|
+| --- | --- |
 | `AddMcpServer()` | Registriert MCP-Services in DI |
 | `.WithHttpTransport()` | Aktiviert HTTP-Transport (statt stdio) |
-| `.WithToolsFromAssembly()` | Findet alle `[McpServerTool]`-Klassen automatisch |
+| `.WithTools<T>()` | Registriert eine Tool-Klasse explizit |
 | `MapMcp()` | Mappt die MCP-Endpunkte auf ASP.NET Core Routing |
-| `[McpServerToolType]` | Markiert eine Klasse als Tool-Container |
 | `[McpServerTool]` | Markiert eine Methode als aufrufbares Tool |
 | `[Description("...")]` | Beschreibung fuer AI-Clients |
 

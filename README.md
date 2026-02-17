@@ -76,6 +76,18 @@ Claude Code (`~/.claude/settings.json`):
 }
 ```
 
+LM Studio (`~/.lmstudio/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "mcp-dotnet-server": {
+      "url": "http://localhost:3001"
+    }
+  }
+}
+```
+
 ## Projektstruktur
 
 ```text
