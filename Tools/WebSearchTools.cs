@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.Net;
 using System.Text.RegularExpressions;
-using System.Xml.Linq;
 using ModelContextProtocol.Server;
 
 /// <summary>
@@ -54,54 +53,71 @@ internal partial class WebSearchTools(IConfiguration configuration)
     }
 
     [McpServerTool]
-    [Description("Sucht aktuelle Nachrichten ueber Google News RSS und gibt Titel, URL, Quelle und Datum zurueck.")]
+    [Description("Sucht aktuelle Nachrichten ueber DuckDuckGo News und gibt Titel, URL und Textausschnitt zurueck.")]
     public async Task<string> SearchNews(
         [Description("Der Suchbegriff")] string query,
-        [Description("Maximale Anzahl der zurueckgegebenen Ergebnisse")] int maxResults = 5,
-        [Description("Sprachcode, z.B. 'de' fuer Deutsch oder 'en' fuer Englisch")] string language = "de")
+        [Description("Maximale Anzahl der zurueckgegebenen Ergebnisse")] int maxResults = 5)
     {
-        var country = language.ToUpper();
         var encoded = Uri.EscapeDataString(query);
-        var url = $"https://news.google.com/rss/search?q={encoded}&hl={language}&gl={country}&ceid={country}:{language}";
+        var url = $"https://html.duckduckgo.com/html/?q={encoded}&ia=news";
 
         var response = await HttpClient.GetAsync(url);
         response.EnsureSuccessStatusCode();
-        var xml = await response.Content.ReadAsStringAsync();
+        var html = await response.Content.ReadAsStringAsync();
 
-        var doc = XDocument.Parse(xml);
-        var items = doc.Descendants("item").Take(maxResults).ToList();
+        var results = ParseResults(html, maxResults, []);
 
-        if (items.Count == 0)
+        if (results.Count == 0)
             return "Keine Nachrichten gefunden.";
 
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"Nachrichten fuer: {query}\n");
 
-        for (var i = 0; i < items.Count; i++)
+        for (var i = 0; i < results.Count; i++)
         {
-            var item = items[i];
-            var title = item.Element("title")?.Value ?? "";
-            // In RSS 2.0 ist <link> ein Text-Node zwischen den Tags
-            var linkNode = item.Nodes()
-                .OfType<XText>()
-                .FirstOrDefault(n => n.Parent?.Name == "link");
-            var link = linkNode?.Value?.Trim()
-                ?? item.Element("link")?.Value
-                ?? item.Element("guid")?.Value
-                ?? "";
-            var pubDate = item.Element("pubDate")?.Value ?? "";
-            var source = item.Element("source")?.Value ?? "";
-            var description = StripHtml(item.Element("description")?.Value ?? "");
-
-            sb.AppendLine($"{i + 1}. {title}");
-            if (!string.IsNullOrEmpty(source)) sb.AppendLine($"   Quelle: {source}");
-            if (!string.IsNullOrEmpty(pubDate)) sb.AppendLine($"   Datum: {pubDate}");
-            sb.AppendLine($"   URL: {link}");
-            if (!string.IsNullOrEmpty(description)) sb.AppendLine($"   {description}");
+            var r = results[i];
+            sb.AppendLine($"{i + 1}. {r.Title}");
+            sb.AppendLine($"   URL: {r.Url}");
+            if (!string.IsNullOrEmpty(r.Snippet)) sb.AppendLine($"   {r.Snippet}");
             sb.AppendLine();
         }
 
         return sb.ToString();
+    }
+
+    [McpServerTool]
+    [Description("Laedt den Inhalt einer Webseite und gibt den bereinigten Text zurueck, damit ein LLM den Artikel oder die Seite darstellen kann.")]
+    public async Task<string> FetchContent(
+        [Description("Die URL der zu ladenden Webseite")] string url,
+        [Description("Maximale Anzahl der zurueckgegebenen Zeichen")] int maxLength = 8000)
+    {
+        var response = await HttpClient.GetAsync(url);
+        response.EnsureSuccessStatusCode();
+        var html = await response.Content.ReadAsStringAsync();
+
+        var text = ExtractText(html);
+
+        if (text.Length > maxLength)
+            text = text[..maxLength] + "\n\n[Inhalt abgeschnitten]";
+
+        return string.IsNullOrWhiteSpace(text) ? "Kein Inhalt gefunden." : text;
+    }
+
+    private static string ExtractText(string html)
+    {
+        // Noisy-Block-Elemente vollstaendig entfernen
+        html = RemoveBlocksRegex().Replace(html, " ");
+        // Block-Tags als Zeilenumbrueche behandeln
+        html = LineBreakTagsRegex().Replace(html, "\n");
+        // Restliche Tags entfernen
+        html = HtmlTagRegex().Replace(html, " ");
+        // HTML-Entities dekodieren
+        html = WebUtility.HtmlDecode(html);
+        // Zeilen bereinigen und leere entfernen
+        var lines = html.Split('\n')
+            .Select(l => MultipleSpacesRegex().Replace(l, " ").Trim())
+            .Where(l => l.Length > 1);
+        return string.Join("\n", lines);
     }
 
     private static List<SearchResult> ParseResults(string html, int maxResults, HashSet<string> allowedDomains)
@@ -174,6 +190,15 @@ internal partial class WebSearchTools(IConfiguration configuration)
 
     [GeneratedRegex(@"<[^>]+>")]
     private static partial Regex HtmlTagRegex();
+
+    [GeneratedRegex(@"<script.*?</script>|<style.*?</style>|<nav.*?</nav>|<header.*?</header>|<footer.*?</footer>|<aside.*?</aside>|<iframe.*?</iframe>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
+    private static partial Regex RemoveBlocksRegex();
+
+    [GeneratedRegex(@"</?(p|div|br|h[1-6]|li|tr|blockquote)[^>]*>", RegexOptions.IgnoreCase)]
+    private static partial Regex LineBreakTagsRegex();
+
+    [GeneratedRegex(@" {2,}")]
+    private static partial Regex MultipleSpacesRegex();
 
     private record SearchResult(string Title, string Url, string Snippet);
 }
