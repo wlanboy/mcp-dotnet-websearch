@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Net;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using ModelContextProtocol.Server;
 
 /// <summary>
@@ -50,6 +51,57 @@ internal partial class WebSearchTools(IConfiguration configuration)
         }
 
         return output;
+    }
+
+    [McpServerTool]
+    [Description("Sucht aktuelle Nachrichten ueber Google News RSS und gibt Titel, URL, Quelle und Datum zurueck.")]
+    public async Task<string> SearchNews(
+        [Description("Der Suchbegriff")] string query,
+        [Description("Maximale Anzahl der zurueckgegebenen Ergebnisse")] int maxResults = 5,
+        [Description("Sprachcode, z.B. 'de' fuer Deutsch oder 'en' fuer Englisch")] string language = "de")
+    {
+        var country = language.ToUpper();
+        var encoded = Uri.EscapeDataString(query);
+        var url = $"https://news.google.com/rss/search?q={encoded}&hl={language}&gl={country}&ceid={country}:{language}";
+
+        var response = await HttpClient.GetAsync(url);
+        response.EnsureSuccessStatusCode();
+        var xml = await response.Content.ReadAsStringAsync();
+
+        var doc = XDocument.Parse(xml);
+        var items = doc.Descendants("item").Take(maxResults).ToList();
+
+        if (items.Count == 0)
+            return "Keine Nachrichten gefunden.";
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"Nachrichten fuer: {query}\n");
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            var title = item.Element("title")?.Value ?? "";
+            // In RSS 2.0 ist <link> ein Text-Node zwischen den Tags
+            var linkNode = item.Nodes()
+                .OfType<XText>()
+                .FirstOrDefault(n => n.Parent?.Name == "link");
+            var link = linkNode?.Value?.Trim()
+                ?? item.Element("link")?.Value
+                ?? item.Element("guid")?.Value
+                ?? "";
+            var pubDate = item.Element("pubDate")?.Value ?? "";
+            var source = item.Element("source")?.Value ?? "";
+            var description = StripHtml(item.Element("description")?.Value ?? "");
+
+            sb.AppendLine($"{i + 1}. {title}");
+            if (!string.IsNullOrEmpty(source)) sb.AppendLine($"   Quelle: {source}");
+            if (!string.IsNullOrEmpty(pubDate)) sb.AppendLine($"   Datum: {pubDate}");
+            sb.AppendLine($"   URL: {link}");
+            if (!string.IsNullOrEmpty(description)) sb.AppendLine($"   {description}");
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
     }
 
     private static List<SearchResult> ParseResults(string html, int maxResults, HashSet<string> allowedDomains)
