@@ -21,12 +21,12 @@ jobs:
         dotnet-version: '10.0.x'
 
     - name: Restore Dependencies
-      run: dotnet restore
+      run: dotnet restore ./mcp-dotnet-websearch.sln
 
     - name: Build
       # --no-restore spart Zeit, da wir es im Schritt davor gemacht haben
-      run: dotnet build --no-restore --configuration Release
+      run: dotnet build ./mcp-dotnet-websearch.sln --no-restore --configuration Release
 
     - name: Test
       # Führt Unit-Tests aus, falls vorhanden
-      run: dotnet test --no-build --configuration Release --verbosity normal
+      run: dotnet test ./mcp-dotnet-websearch.sln --no-build --configuration Release --verbosity normal
