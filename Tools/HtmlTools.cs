@@ -63,22 +63,27 @@ internal static partial class HtmlTools
             // Domain-Whitelist pruefen
             if (allowedDomains.Count > 0)
             {
-                if (Uri.TryCreate(finalUrl, UriKind.Absolute, out var uri))
-                {
-                    var host = uri.Host.TrimStart("www.".ToCharArray());
-                    if (!allowedDomains.Any(d => host == d || host.EndsWith("." + d)))
-                        continue;
-                }
-                else
-                {
+                if (!Uri.TryCreate(finalUrl, UriKind.Absolute, out var uri) || !IsHostAllowed(uri, allowedDomains))
                     continue;
-                }
             }
 
             results.Add(new SearchResult(title, finalUrl, snippet));
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Prueft, ob der Host der URI in der Domain-Whitelist enthalten ist (exakt oder als Subdomain).
+    /// Bei leerer Whitelist ist jeder Host erlaubt.
+    /// </summary>
+    public static bool IsHostAllowed(Uri uri, HashSet<string> allowedDomains)
+    {
+        if (allowedDomains.Count == 0)
+            return true;
+
+        var host = uri.Host.TrimStart("www.".ToCharArray());
+        return allowedDomains.Any(d => host == d || host.EndsWith("." + d));
     }
 
     private static string StripHtml(string input)

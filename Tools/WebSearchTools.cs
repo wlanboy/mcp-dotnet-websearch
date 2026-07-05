@@ -95,6 +95,9 @@ internal class WebSearchTools(IConfiguration configuration)
             throw new McpException("Ungueltige URL: Es werden nur absolute http/https-URLs unterstuetzt.");
         }
 
+        if (!HtmlTools.IsHostAllowed(uri, _allowedDomains))
+            throw new McpException($"Die Domain '{uri.Host}' ist nicht in der Whitelist (WebSearch:AllowedDomains) enthalten.");
+
         var html = await GetHtmlAsync(url, cancellationToken);
 
         var text = HtmlTools.ExtractText(html);
