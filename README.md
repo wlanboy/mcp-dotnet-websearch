@@ -118,17 +118,33 @@ LM Studio (`~/.lmstudio/mcp.json`):
 }
 ```
 
-## Projektstruktur
+## Container Build
 
-```text
-mcp-dotnet-server/
-├── Program.cs                  # Server-Setup + MCP-Endpunkte
-├── Tools/
-│   ├── RandomNumberTools.cs    # Zufallszahl-Tool
-│   └── WebSearchTools.cs       # DuckDuckGo-Websuche-Tool
-├── appsettings.json            # Konfiguration (Domain-Whitelist)
-└── mcp-dotnet-server.csproj    # Projektdatei + Abhaengigkeiten
+Das Projekt ist auf Native AOT umgestellt (`PublishAot`, `InvariantGlobalization` in der `.csproj`). Das Dockerfile baut ein natives, selbstenthaltenes Linux-musl-Binary (`linux-musl-x64`) und benoetigt zur Laufzeit kein .NET-Runtime-Image, nur `dotnet/runtime-deps`.
+
+```bash
+docker build -t mcp-dotnet-server .
+docker run -d -p 3001:3001 --name mcp-dotnet-server mcp-dotnet-server
 ```
+
+Der Server ist danach unter `http://localhost:3001` erreichbar (siehe [test.sh](test.sh) fuer einen End-to-End-Smoke-Test gegen einen laufenden Container).
+
+### Kennzahlen (Native AOT, linux-musl-x64)
+
+| Metrik | Wert |
+| --- | --- |
+| Image-Groesse | ~125 MB |
+| Startup-Zeit (Container-Start bis `Application started`) | ~180-200 ms |
+
+Die Startup-Zeit laesst sich reproduzieren mit [measure-startup.sh](measure-startup.sh):
+
+```bash
+./measure-startup.sh mcp-dotnet-server:latest 5
+```
+
+Das Skript startet den Container mehrfach neu und misst die Differenz zwischen `docker inspect`-`StartedAt` und dem Zeitstempel der `Application started`-Logzeile.
+
+Zum Vergleich: das self-contained Single-File-Deployment ohne AOT (JIT) lag bei ~177 MB Image-Groesse und einem spuerbar laengeren Kaltstart durch das JIT-Warmup.
 
 ## Entstehung
 
