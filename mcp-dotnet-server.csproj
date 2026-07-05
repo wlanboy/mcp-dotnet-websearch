@@ -15,6 +15,9 @@
 
     <!-- Set up the MCP server to be a single file executable -->
     <PublishSingleFile>true</PublishSingleFile>
+
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
