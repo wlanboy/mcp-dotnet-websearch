@@ -10,4 +10,4 @@ builder.Services
 var app = builder.Build();
 app.MapMcp();
 
-app.Run("http://localhost:3001");
+app.Run("http://+:3001");
