@@ -9,7 +9,7 @@ extract_session_id() {
 }
 
 extract_body() {
-  grep '^data:' | sed 's/^data: //'
+  grep '^data:' | sed 's/^data: //' | jq
 }
 
 echo "==> initialize"
