@@ -1,5 +1,6 @@
 # ---- Build Stage ----
-FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
+# -aot-Suffix bringt Clang/Build-Toolchain für die Native-AOT-Cross-Kompilierung mit
+FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine-aot AS build
 WORKDIR /src
 
 # 1. Nur Projekt-Datei zuerst - Layer-Caching für restore
@@ -13,11 +14,10 @@ RUN dotnet publish mcp-dotnet-server.csproj \
     -o /app/publish
 
 # ---- Runtime Stage ----
-# self-contained Single-File-Deployment: kein dotnet/aspnet-Image nötig,
-# nur die OS-Abhängigkeiten des gebündelten Runtimes
+# Native-AOT-Binary: kein dotnet/aspnet-Image nötig, nur die OS-Abhängigkeiten
+# des kompilierten Binaries. InvariantGlobalization macht icu-libs überflüssig.
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine AS runtime
 WORKDIR /app
-RUN apk add --no-cache icu-libs
 
 ENV DOTNET_EnableDiagnostics=0
 
