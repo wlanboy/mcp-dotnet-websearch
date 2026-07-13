@@ -10,7 +10,7 @@ RUN dotnet restore mcp-dotnet-server.csproj -r linux-musl-x64
 # 2. Sourcecode zuletzt kopieren
 COPY . .
 RUN dotnet publish mcp-dotnet-server.csproj \
-    -c Release -r linux-musl-x64 --no-restore \
+    -c Release -r linux-musl-x64 \
     -o /app/publish
 
 # ---- Runtime Stage ----
